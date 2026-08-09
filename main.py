@@ -15,7 +15,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from chatbot import process_message, create_empty_state
+from chatbot import process_message, create_empty_state, configure_runtime
 
 MODEL_PATH = Path(__file__).with_name("real_estate_model.joblib")
 
@@ -890,6 +890,12 @@ def predict(payload: PropertyInput):
 
 @app.post("/chat")
 def chat(request: ChatRequest):
+    # Avoid a loopback HTTP call on serverless deployments such as Vercel.
+    # Both handlers reuse the exact same validation and prediction code as the API.
+    configure_runtime(
+        constraint_handler=lambda params: build_constraints(**params),
+        prediction_handler=lambda data: predict(PropertyInput(**data)).model_dump(),
+    )
     session_id = request.session_id.strip() or "default"
 
     if session_id not in chat_sessions:

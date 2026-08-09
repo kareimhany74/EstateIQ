@@ -4,6 +4,15 @@ import requests
 
 PORT = os.getenv("PORT", "8000")
 API_URL = os.getenv("ESTATEIQ_INTERNAL_API", f"http://127.0.0.1:{PORT}")
+_constraint_handler = None
+_prediction_handler = None
+
+
+def configure_runtime(constraint_handler=None, prediction_handler=None):
+    """Use in-process API handlers when chatbot and FastAPI share a runtime."""
+    global _constraint_handler, _prediction_handler
+    _constraint_handler = constraint_handler
+    _prediction_handler = prediction_handler
 
 
 def create_empty_state():
@@ -342,6 +351,12 @@ def get_dynamic_constraints(state):
         "compound_name": state["compound_name"] or ""
     }
 
+    if _constraint_handler is not None:
+        try:
+            return _constraint_handler(params)
+        except Exception as exc:
+            return {"error": str(exc).replace("Value error, ", "")}
+
     try:
         response = requests.get(
             f"{API_URL}/constraints",
@@ -447,6 +462,15 @@ def get_prediction(state):
         "ready_to_move": state["ready_to_move"],
         "prime_location": state["prime_location"]
     }
+
+    if _prediction_handler is not None:
+        try:
+            return _prediction_handler(payload)
+        except Exception as exc:
+            detail = getattr(exc, "detail", str(exc))
+            if isinstance(detail, list) and detail:
+                detail = detail[0].get("msg", "Invalid property information.")
+            return {"error": str(detail).replace("Value error, ", "")}
 
     try:
         response = requests.post(
