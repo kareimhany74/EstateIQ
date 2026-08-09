@@ -543,11 +543,22 @@ def format_prediction_response(prediction):
     confidence = prediction["confidence_label"]
     support = prediction["evidence_support"]
 
+    positive = prediction.get("top_positive_contributors", [])[:3]
+    negative = prediction.get("top_negative_contributors", [])[:3]
+    factors = []
+    if positive:
+        factors.append("Factors lifting the estimate: " + ", ".join(item["label"] for item in positive))
+    if negative:
+        factors.append("Factors lowering the estimate: " + ", ".join(item["label"] for item in negative))
+    explanation = ("\n" + "\n".join(factors)) if factors else ""
+
     return (
         f"Estimated Market Value: {price}\n"
-        f"Estimated Range: {low} - {high}\n"
+        f"Indicative Valuation Range: {low} - {high}\n"
         f"Valuation Confidence: {confidence}\n"
         f"Comparable Market Evidence: {support} listings"
+        f"{explanation}\n"
+        "Range is indicative and does not guarantee statistical coverage."
     )
 
 

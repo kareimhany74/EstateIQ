@@ -2,12 +2,15 @@ from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Optional
+from collections import Counter
+from threading import Lock
 import math
 import time
 
 import joblib
 import numpy as np
 import pandas as pd
+import xgboost as xgb
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -87,6 +90,35 @@ app.add_middleware(
 # Store chatbot conversation state by session.
 # These sessions reset whenever the development server restarts.
 chat_sessions = {}
+
+# Anonymous, process-local counters. No request bodies, IPs, or session IDs are stored.
+# Values reset whenever the server instance restarts or scales down.
+usage_analytics = {
+    "prediction_count": 0,
+    "predicted_price_total_egp": 0.0,
+    "governorates": Counter(),
+    "property_types": Counter(),
+}
+analytics_lock = Lock()
+
+FEATURE_LABELS = {
+    "area_sqm": "Property area",
+    "bedrooms_num": "Bedrooms",
+    "bathrooms_per_100sqm": "Bathroom density",
+    "bedrooms_per_100sqm": "Bedroom density",
+    "bathrooms_per_bedroom": "Bathrooms per bedroom",
+    "context_price_encoded": "Local market price",
+    "context_price_per_sqm": "Local price per sqm",
+    "log_context_price": "Local market level",
+    "is_furnished": "Furnished",
+    "ready_to_move": "Ready to move",
+    "has_pool": "Pool",
+    "has_garden": "Garden",
+    "has_clubhouse": "Clubhouse",
+    "is_standalone": "Standalone property",
+    "has_maid_room": "Maid room",
+    "prime_location": "Prime location",
+}
 
 
 @app.middleware("http")
@@ -433,7 +465,7 @@ class PropertyInput(BaseModel):
     has_maid_room: bool = False
     prime_location: bool = False
 
-    model_config = ConfigDict(use_enum_values=True)
+    model_config = ConfigDict(use_enum_values=True, validate_default=True)
 
     @model_validator(mode="after")
     def validate_input(self):
@@ -521,6 +553,10 @@ class PredictionOutput(BaseModel):
     evidence_level: str
     evidence_support: int
     support_counts: dict
+    range_note: str
+    explanation_method: str
+    top_positive_contributors: list[dict]
+    top_negative_contributors: list[dict]
 
 
 class MetadataOutput(BaseModel):
@@ -592,6 +628,70 @@ def build_feature_row(payload: PropertyInput):
 
     frame = pd.DataFrame([row])[FEATURE_COLS]
     return frame, context_price, evidence, area_band
+
+
+def humanize_feature(name: str) -> str:
+    if name in FEATURE_LABELS:
+        return FEATURE_LABELS[name]
+    prefixes = {
+        "city_type_interaction_": "Location and property type",
+        "type_finish_": "Property type and finishing",
+        "type_view_": "Property type and view",
+        "finishing_status_": "Finishing status",
+        "payment_method_": "Payment method",
+        "property_type_": "Property type",
+        "type_": "Property type",
+        "view_type_": "View",
+        "city_": "Governorate",
+    }
+    for prefix, label in prefixes.items():
+        if name.startswith(prefix):
+            value = name[len(prefix):].replace("__", " / ").replace("_", " ")
+            return f"{label}: {value.title()}"
+    return name.replace("_", " ").title()
+
+
+def explain_prediction(features: pd.DataFrame):
+    """Return native XGBoost TreeSHAP contributions without the SHAP package."""
+    try:
+        booster = MODEL.get_booster()
+        matrix = xgb.DMatrix(features, feature_names=list(features.columns))
+        values = booster.predict(matrix, pred_contribs=True)[0]
+        # The final value is the bias term. Model output is log-residual, so
+        # exp(contribution)-1 is an intuitive approximate percentage effect.
+        contributors = []
+        for name, value in zip(FEATURE_COLS, values[:-1]):
+            value = float(value)
+            if not math.isfinite(value) or abs(value) < 1e-7:
+                continue
+            pct = math.expm1(max(-3.0, min(3.0, value))) * 100
+            contributors.append({
+                "feature": name,
+                "label": humanize_feature(name),
+                "contribution_log": round(value, 6),
+                "approx_effect_percent": round(pct, 1),
+            })
+        positive = sorted(
+            (item for item in contributors if item["contribution_log"] > 0),
+            key=lambda item: item["contribution_log"], reverse=True,
+        )[:4]
+        negative = sorted(
+            (item for item in contributors if item["contribution_log"] < 0),
+            key=lambda item: item["contribution_log"],
+        )[:4]
+        return positive, negative, "xgboost_pred_contribs"
+    except Exception:
+        # Prediction remains available if an older serialized estimator does
+        # not expose a compatible booster API.
+        return [], [], "unavailable"
+
+
+def record_prediction(payload: PropertyInput, prediction: float):
+    with analytics_lock:
+        usage_analytics["prediction_count"] += 1
+        usage_analytics["predicted_price_total_egp"] += prediction
+        usage_analytics["governorates"][payload.city] += 1
+        usage_analytics["property_types"][payload.property_type] += 1
 
 
 # Step 7: Expose API endpoints.
@@ -701,6 +801,26 @@ def market_context(
     }
 
 
+@app.get("/analytics")
+def analytics():
+    with analytics_lock:
+        count = usage_analytics["prediction_count"]
+        top_city = usage_analytics["governorates"].most_common(1)
+        top_type = usage_analytics["property_types"].most_common(1)
+        return {
+            "prediction_count": count,
+            "average_predicted_price_egp": round(
+                usage_analytics["predicted_price_total_egp"] / count, 2
+            ) if count else 0.0,
+            "most_requested_governorate": top_city[0][0] if top_city else None,
+            "most_requested_property_type": top_type[0][0] if top_type else None,
+            "governorate_counts": dict(usage_analytics["governorates"]),
+            "property_type_counts": dict(usage_analytics["property_types"]),
+            "storage": "anonymous_in_memory",
+            "reset_note": "Counters reset when this server instance restarts or scales down.",
+        }
+
+
 @app.post("/predict", response_model=PredictionOutput)
 def predict(payload: PropertyInput):
     try:
@@ -729,6 +849,7 @@ def predict(payload: PropertyInput):
         width = min(0.60, max(0.16, base_error * (1.25 - score * 0.45)))
         estimate_low = max(0, prediction * (1 - width))
         estimate_high = prediction * (1 + width)
+        positive, negative, explanation_method = explain_prediction(features)
 
         if score >= 0.78:
             confidence_label = "High"
@@ -737,6 +858,7 @@ def predict(payload: PropertyInput):
         else:
             confidence_label = "Low"
 
+        record_prediction(payload, prediction)
         return PredictionOutput(
             predicted_price_egp=round(prediction, 2),
             predicted_price_formatted=f"{prediction:,.0f} EGP",
@@ -749,6 +871,13 @@ def predict(payload: PropertyInput):
             evidence_level=evidence["level"],
             evidence_support=int(evidence["support"]),
             support_counts=support_counts,
+            range_note=(
+                "Indicative valuation range based on model error and available market "
+                "evidence; it is not a guaranteed statistical coverage interval."
+            ),
+            explanation_method=explanation_method,
+            top_positive_contributors=positive,
+            top_negative_contributors=negative,
         )
     except HTTPException:
         raise
