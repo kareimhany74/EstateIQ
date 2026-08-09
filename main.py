@@ -444,6 +444,7 @@ def build_constraints(
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1)
     session_id: str = Field(default="default", min_length=1, max_length=100)
+    state: Optional[dict] = None
 
 
 class PropertyInput(BaseModel):
@@ -898,11 +899,16 @@ def chat(request: ChatRequest):
     )
     session_id = request.session_id.strip() or "default"
 
-    if session_id not in chat_sessions:
-        chat_sessions[session_id] = create_empty_state()
+    # The browser returns the latest state with every message. This keeps chat
+    # reliable when consecutive requests reach different serverless instances.
+    state = create_empty_state()
+    source_state = request.state or chat_sessions.get(session_id, {})
+    for key in state:
+        if key in source_state:
+            state[key] = source_state[key]
 
-    state = chat_sessions[session_id]
     reply = process_message(request.message, state)
+    chat_sessions[session_id] = state
 
     return {
         "reply": reply,

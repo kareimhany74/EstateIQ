@@ -419,6 +419,12 @@ def validate_dynamic_constraints(state):
 
 
 def validate_state(state):
+    if state["area_sqm"] is not None and state["area_sqm"] <= 10:
+        return False, (
+            "Property area must be greater than 10 sqm. "
+            "Please enter the corrected area, for example: 150 sqm."
+        )
+
     is_valid, message = validate_dynamic_constraints(state)
     if not is_valid:
         return False, message
@@ -467,6 +473,23 @@ def get_prediction(state):
         try:
             return _prediction_handler(payload)
         except Exception as exc:
+            if hasattr(exc, "errors"):
+                errors = exc.errors()
+                if errors:
+                    first = errors[0]
+                    field = str(first.get("loc", ["property information"])[-1])
+                    error_type = first.get("type", "")
+                    if field == "area_sqm" and error_type == "greater_than":
+                        return {
+                            "error": (
+                                "Property area must be greater than 10 sqm. "
+                                "Please enter the corrected area, for example: 150 sqm."
+                            )
+                        }
+                    message = first.get("msg", "Invalid property information.")
+                    return {
+                        "error": f"Please correct {field.replace('_', ' ')}: {message}."
+                    }
             detail = getattr(exc, "detail", str(exc))
             if isinstance(detail, list) and detail:
                 detail = detail[0].get("msg", "Invalid property information.")

@@ -212,6 +212,7 @@ function createChatSessionId(){
 }
 let chatSessionId=localStorage.getItem('estateiq_chat_session');
 if(!chatSessionId){chatSessionId=createChatSessionId();localStorage.setItem('estateiq_chat_session',chatSessionId);}
+let chatState=null;
 
 function addChatMessage(text,role='bot'){
   const el=document.createElement('div');
@@ -230,6 +231,7 @@ chatReset.addEventListener('click',async()=>{
   try{await fetch(`${API}/chat/${encodeURIComponent(chatSessionId)}`,{method:'DELETE'});}catch(e){console.warn(e);}
   chatSessionId=createChatSessionId();
   localStorage.setItem('estateiq_chat_session',chatSessionId);
+  chatState=null;
   chatMessages.innerHTML='';
   addChatMessage('New property started. What is the property area in square meters?','bot');
   chatInput.focus();
@@ -248,7 +250,7 @@ chatForm.addEventListener('submit',async(event)=>{
     const response=await fetch(`${API}/chat`,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({message,session_id:chatSessionId})
+      body:JSON.stringify({message,session_id:chatSessionId,state:chatState})
     });
     const data=await response.json();
     typing.remove();
@@ -256,6 +258,7 @@ chatForm.addEventListener('submit',async(event)=>{
       addChatMessage(typeof data?.detail==='string'?data.detail:'Unable to process the message right now.','bot');
       return;
     }
+    chatState=data.state||chatState;
     addChatMessage(data.reply||'No response received.','bot');
   }catch(error){
     typing.remove();
