@@ -3,6 +3,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional
 from collections import Counter
+from contextlib import asynccontextmanager
 from threading import Lock
 import math
 import time
@@ -15,7 +16,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from chatbot import process_message, create_empty_state, configure_runtime
+from chatbot import process_message_with_context, create_empty_state, configure_runtime
+from gemini_chat import GeminiChat
 
 MODEL_PATH = Path(__file__).with_name("real_estate_model.joblib")
 
@@ -73,10 +75,20 @@ ViewType = Enum(
 )
 
 
+gemini_chat = GeminiChat()
+
+
+@asynccontextmanager
+async def app_lifespan(_app: FastAPI):
+    yield
+    await gemini_chat.close()
+
+
 # Step 2: Create the API.
 app = FastAPI(
     title="EstateIQ — Property Intelligence API",
     version=MODEL_VERSION,
+    lifespan=app_lifespan,
 )
 app.add_middleware(
     CORSMiddleware,
@@ -86,10 +98,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-# Store chatbot conversation state by session.
-# These sessions reset whenever the development server restarts.
-chat_sessions = {}
 
 # Anonymous, process-local counters. No request bodies, IPs, or session IDs are stored.
 # Values reset whenever the server instance restarts or scales down.
@@ -442,7 +450,7 @@ def build_constraints(
 
 # Step 5: Define request and response schemas.
 class ChatRequest(BaseModel):
-    message: str = Field(..., min_length=1)
+    message: str = Field(..., min_length=1, max_length=4000)
     session_id: str = Field(default="default", min_length=1, max_length=100)
     state: Optional[dict] = None
 
@@ -709,6 +717,8 @@ def health():
         "loaded_at": MODEL_LOADED_AT,
         "n_features": len(FEATURE_COLS),
         "metrics": METRICS,
+        "gemini_configured": gemini_chat.is_configured,
+        "gemini_model": gemini_chat.model_name,
     }
 
 
@@ -890,7 +900,7 @@ def predict(payload: PropertyInput):
 
 
 @app.post("/chat")
-def chat(request: ChatRequest):
+async def chat(request: ChatRequest):
     # Avoid a loopback HTTP call on serverless deployments such as Vercel.
     # Both handlers reuse the exact same validation and prediction code as the API.
     configure_runtime(
@@ -899,32 +909,47 @@ def chat(request: ChatRequest):
     )
     session_id = request.session_id.strip() or "default"
 
-    # The browser returns the latest state with every message. This keeps chat
-    # reliable when consecutive requests reach different serverless instances.
+    # The browser returns the latest state with every message. The API does not
+    # keep a shared session store, preventing cross-user state leakage and
+    # unbounded memory growth on long-running instances.
     state = create_empty_state()
-    source_state = request.state or chat_sessions.get(session_id, {})
+    source_state = request.state or {}
     for key in state:
         if key in source_state:
             state[key] = source_state[key]
 
-    reply = process_message(request.message, state)
-    chat_sessions[session_id] = state
-
+    chat_result = process_message_with_context(request.message, state)
+    if chat_result["stage"] in {"greeting", "help"}:
+        assistant_result = {
+            "text": chat_result["reply"],
+            "provider": "estateiq_fast_path",
+            "reason": None,
+        }
+    else:
+        assistant_result = await gemini_chat.enhance(
+            user_message=request.message,
+            state=state,
+            workflow_reply=chat_result["reply"],
+            stage=chat_result["stage"],
+            estateiq_valuation=chat_result["prediction"],
+        )
     return {
-        "reply": reply,
+        "reply": assistant_result["text"],
         "session_id": session_id,
         "state": state,
+        "assistant_provider": assistant_result["provider"],
+        "valuation_source": (
+            "estateiq_ml" if chat_result["prediction"] is not None else None
+        ),
     }
 
 
 @app.delete("/chat/{session_id}")
 def reset_chat_session(session_id: str):
-    chat_sessions[session_id] = create_empty_state()
-
     return {
         "status": "reset",
         "session_id": session_id,
-        "state": chat_sessions[session_id],
+        "state": create_empty_state(),
     }
 
 

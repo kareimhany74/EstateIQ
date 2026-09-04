@@ -634,8 +634,47 @@ def format_current_details(state):
     return "\n".join(lines)
 
 
-def process_message(message, state):
+def process_message_with_context(message, state):
+    """Process one turn and expose only backend-produced valuation context.
+
+    The structured result lets the API distinguish ordinary conversational
+    replies from an EstateIQ ML prediction. This prevents an external language
+    model from being treated as the source of property prices.
+    """
     message_lower = message.lower().strip()
+
+    arabic_greetings = {
+        "هاي", "هلا", "اهلا", "أهلا", "السلام عليكم", "صباح الخير", "مساء الخير"
+    }
+    english_greetings = {"hi", "hello", "hey", "good morning", "good evening"}
+    if message_lower in arabic_greetings | english_greetings:
+        if message_lower in arabic_greetings:
+            reply = (
+                "أهلًا! أنا مساعد EstateIQ. نموذج EstateIQ هو اللي بيحسب سعر "
+                "العقار، وGemini بيساعد في شرح النتيجة. ابدأ بمساحة العقار "
+                "والمحافظة، مثلًا: شقة 150 متر في القاهرة."
+            )
+        else:
+            reply = (
+                "Hi! I’m the EstateIQ Assistant. EstateIQ’s model calculates "
+                "the property value and Gemini helps explain the result. Start "
+                "with the area and governorate, for example: a 150 sqm apartment in Cairo."
+            )
+        return {"reply": reply, "stage": "greeting", "prediction": None}
+
+    help_commands = {
+        "help", "what can you do", "مساعدة", "بتعمل ايه", "بتعمل إيه", "ممكن تعمل ايه"
+    }
+    if message_lower in help_commands:
+        return {
+            "reply": (
+                "I collect the property details, validate them, run EstateIQ’s "
+                "valuation model, then use Gemini to explain the verified result. "
+                "Start by telling me the area and governorate."
+            ),
+            "stage": "help",
+            "prediction": None,
+        }
 
     reset_commands = [
         "reset",
@@ -647,10 +686,14 @@ def process_message(message, state):
 
     if message_lower in reset_commands:
         reset_conversation_state(state)
-        return (
-            "Property details have been reset.\n"
-            "What is the property area in square meters?"
-        )
+        return {
+            "reply": (
+                "Property details have been reset.\n"
+                "What is the property area in square meters?"
+            ),
+            "stage": "reset",
+            "prediction": None,
+        }
 
     detail_commands = [
         "show details",
@@ -661,7 +704,11 @@ def process_message(message, state):
     ]
 
     if message_lower in detail_commands:
-        return format_current_details(state)
+        return {
+            "reply": format_current_details(state),
+            "stage": "details",
+            "prediction": None,
+        }
 
     extracted_data = extract_information(message)
 
@@ -674,16 +721,37 @@ def process_message(message, state):
 
     next_question = get_next_question(state)
     if next_question:
-        return next_question
+        return {
+            "reply": next_question,
+            "stage": "collecting_details",
+            "prediction": None,
+        }
 
     is_valid, validation_message = validate_state(state)
     if not is_valid:
         validation_message = clean_user_message(validation_message)
         suggestions = suggest_alternatives(state, validation_message)
-        return format_validation_response(validation_message, suggestions)
+        return {
+            "reply": format_validation_response(validation_message, suggestions),
+            "stage": "validation_error",
+            "prediction": None,
+        }
 
     prediction = get_prediction(state)
     if "error" in prediction:
-        return clean_user_message(prediction["error"])
+        return {
+            "reply": clean_user_message(prediction["error"]),
+            "stage": "prediction_error",
+            "prediction": None,
+        }
 
-    return format_prediction_response(prediction)
+    return {
+        "reply": format_prediction_response(prediction),
+        "stage": "valuation",
+        "prediction": prediction,
+    }
+
+
+def process_message(message, state):
+    """Backward-compatible text-only chatbot entry point."""
+    return process_message_with_context(message, state)["reply"]

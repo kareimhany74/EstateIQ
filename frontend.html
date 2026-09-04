@@ -28,6 +28,10 @@
 .chat-head{padding:16px 17px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:12px}
 .chat-head-title{display:flex;align-items:center;gap:10px}.chat-ai-mark{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;background:rgba(216,179,106,.12);border:1px solid rgba(216,179,106,.3);color:var(--gold2);font-weight:800}
 .chat-head strong{font-size:14px}.chat-head small{display:block;color:var(--muted);font-size:10px;margin-top:2px}.chat-head-actions{display:flex;gap:6px}
+.chat-status{display:flex;align-items:center;gap:7px;padding:8px 16px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.025);color:var(--muted);font-size:10px}
+.chat-status-dot{width:7px;height:7px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 4px rgba(216,179,106,.1)}
+.chat-status.connected{color:#b9f4dc}.chat-status.connected .chat-status-dot{background:var(--green);box-shadow:0 0 0 4px rgba(95,208,165,.1)}
+.chat-status.fallback{color:#f2d391}.chat-status.fallback .chat-status-dot{background:var(--gold)}
 .chat-icon-btn{width:32px;height:32px;border-radius:10px;border:1px solid var(--line);color:var(--muted);background:rgba(255,255,255,.03);cursor:pointer}
 .chat-icon-btn:hover{color:var(--text);background:rgba(255,255,255,.07)}
 .chat-messages{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px}
@@ -139,15 +143,16 @@
   <div class="chat-head">
     <div class="chat-head-title">
       <div class="chat-ai-mark">E</div>
-      <div><strong>EstateIQ Assistant</strong><small>Conversational property valuation</small></div>
+      <div><strong>EstateIQ Assistant</strong><small>Gemini conversation · EstateIQ valuation</small></div>
     </div>
     <div class="chat-head-actions">
       <button class="chat-icon-btn" id="chatReset" title="New property">↻</button>
       <button class="chat-icon-btn" id="chatClose" title="Close">×</button>
     </div>
   </div>
+  <div class="chat-status" id="chatStatus"><span class="chat-status-dot"></span><span id="chatStatusText">Checking Gemini connection…</span></div>
   <div class="chat-messages" id="chatMessages">
-    <div class="chat-msg bot">Hi — tell me about the property you want to value. You can start with something like: “150 sqm apartment in Cairo”.</div>
+    <div class="chat-msg bot">Hi — Gemini will guide the conversation, while EstateIQ's valuation model remains the only source of property prices. Start with something like: “150 sqm apartment in Cairo”.</div>
   </div>
   <form class="chat-compose" id="chatForm">
     <input id="chatInput" autocomplete="off" placeholder="Describe the property..." />
@@ -205,6 +210,30 @@ const chatForm=document.getElementById('chatForm');
 const chatInput=document.getElementById('chatInput');
 const chatSend=document.getElementById('chatSend');
 const chatMessages=document.getElementById('chatMessages');
+const chatStatus=document.getElementById('chatStatus');
+const chatStatusText=document.getElementById('chatStatusText');
+
+function setChatProviderStatus(mode){
+  chatStatus.classList.remove('connected','fallback');
+  if(mode==='gemini'){
+    chatStatus.classList.add('connected');
+    chatStatusText.textContent='Gemini connected · Prices by EstateIQ ML';
+  }else if(mode==='fallback'){
+    chatStatus.classList.add('fallback');
+    chatStatusText.textContent='EstateIQ active · Gemini temporarily unavailable';
+  }else{
+    chatStatusText.textContent='Checking Gemini connection…';
+  }
+}
+
+async function refreshChatProviderStatus(){
+  try{
+    const response=await fetch(`${API}/health`);
+    const data=await response.json();
+    setChatProviderStatus(data.gemini_configured?'gemini':'fallback');
+  }catch(error){setChatProviderStatus('fallback');}
+}
+refreshChatProviderStatus();
 
 function createChatSessionId(){
   if(window.crypto&&crypto.randomUUID){return 'web-'+crypto.randomUUID();}
@@ -259,6 +288,8 @@ chatForm.addEventListener('submit',async(event)=>{
       return;
     }
     chatState=data.state||chatState;
+    if(data.assistant_provider==='gemini')setChatProviderStatus('gemini');
+    if(data.assistant_provider==='local_fallback')setChatProviderStatus('fallback');
     addChatMessage(data.reply||'No response received.','bot');
   }catch(error){
     typing.remove();
