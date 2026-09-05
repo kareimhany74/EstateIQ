@@ -919,7 +919,7 @@ async def chat(request: ChatRequest):
             state[key] = source_state[key]
 
     chat_result = process_message_with_context(request.message, state)
-    if chat_result["stage"] in {"greeting", "help"}:
+    if chat_result["stage"] != "valuation":
         assistant_result = {
             "text": chat_result["reply"],
             "provider": "estateiq_fast_path",

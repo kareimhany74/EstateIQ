@@ -57,6 +57,23 @@ questions = {
 }
 
 
+arabic_questions = {
+    "area_sqm": "مساحة العقار كام متر مربع؟",
+    "bedrooms": "العقار فيه كام غرفة نوم؟",
+    "bathrooms": "العقار فيه كام حمام؟",
+    "property_type": "نوع العقار إيه؟ مثلًا شقة أو فيلا.",
+    "city": "العقار موجود في أنهي محافظة؟",
+    "payment_method": "طريقة الدفع كاش ولا تقسيط؟",
+}
+
+
+uncertain_answers = {
+    "مش عارف", "مش عارفة", "معرفش", "ماعرفش", "لا اعرف", "لا أعرف",
+    "مش متأكد", "مش متأكدة", "مش فاكر", "مش فاكرة", "i don't know",
+    "dont know", "don't know", "not sure", "no idea",
+}
+
+
 property_type_map = {
     "apartment": "Apartment",
     "villa": "Villa",
@@ -292,6 +309,32 @@ def get_next_question(state):
     if not missing_fields:
         return None
     return questions[missing_fields[0]]
+
+
+def is_uncertain_answer(message):
+    message_clean = re.sub(r"[.!?؟،]+$", "", message.strip().lower()).strip()
+    return message_clean in uncertain_answers
+
+
+def format_uncertain_response(message, state):
+    missing_fields = get_missing_fields(state)
+    is_arabic = bool(re.search(r"[\u0600-\u06ff]", message))
+
+    if missing_fields:
+        field = missing_fields[0]
+        if is_arabic:
+            return f"ولا يهمك. {arabic_questions[field]}"
+        return f"No problem. {questions[field]}"
+
+    if is_arabic:
+        return (
+            "ولا يهمك. لو عايز تقييم مختلف اضغط علامة ↻ وابدأ بيانات عقار جديد، "
+            "أو اكتب المعلومة اللي حابب تعدّلها."
+        )
+    return (
+        "No problem. Use ↻ to start a new property, or tell me which property "
+        "detail you want to change."
+    )
 
 
 def extract_contextual_answer(message, state):
@@ -710,12 +753,29 @@ def process_message_with_context(message, state):
             "prediction": None,
         }
 
+    if is_uncertain_answer(message):
+        return {
+            "reply": format_uncertain_response(message, state),
+            "stage": "clarification",
+            "prediction": None,
+        }
+
     extracted_data = extract_information(message)
 
     # If the user gives a short reply such as "140", interpret it
     # according to the question the chatbot is currently asking.
     contextual_data = extract_contextual_answer(message, state)
     extracted_data.update(contextual_data)
+
+    if not extracted_data and not get_missing_fields(state):
+        return {
+            "reply": (
+                "I didn't find a property detail to update. Use ↻ to start a new "
+                "property, or tell me the specific detail you want to change."
+            ),
+            "stage": "clarification",
+            "prediction": None,
+        }
 
     update_state(state, extracted_data)
 
