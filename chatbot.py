@@ -684,7 +684,15 @@ def process_message_with_context(message, state):
     replies from an EstateIQ ML prediction. This prevents an external language
     model from being treated as the source of property prices.
     """
-    message_lower = message.lower().strip()
+    message_lower = message.lower().strip().strip("!؟?.,، ")
+    casual = re.sub(r"[إأآ]", "ا", message_lower)
+    if casual in {"لا", "لاء", "no", "no thanks", "مش عايز", "مش دلوقتي"}:
+        return {"reply": "تمام، مفيش مشكلة. أنا موجود لما تحتاج مساعدة." if casual not in {"no", "no thanks"} else "No problem. I'm here if you need anything.", "stage": "conversation", "prediction": None}
+    if casual in {"بفكر", "لسه بفكر", "هفكر", "i'm thinking", "just thinking"}:
+        return {"reply": "خد وقتك. لو تحب نرتب الاختيارات مع بعض، قولي إيه اللي محيرك." if "thinking" not in casual else "Take your time. If you'd like to talk through your options, tell me what's on your mind.", "stage": "conversation", "prediction": None}
+    casual = re.sub(r"[\u064b-\u065f\u0670]", "", casual)
+    if casual in {"ازيك", "ازيكم", "عامل اي", "عامل ايه", "عامل اية", "اخبارك", "كيفك", "كيف حالك"}:
+        return {"reply": "أهلًا بيك! إنت أخبارك إيه؟ تحب نتكلم في إيه؟", "stage": "greeting", "prediction": None}
 
     arabic_greetings = {
         "هاي", "هلا", "اهلا", "أهلا", "السلام عليكم", "صباح الخير", "مساء الخير"
@@ -693,15 +701,11 @@ def process_message_with_context(message, state):
     if message_lower in arabic_greetings | english_greetings:
         if message_lower in arabic_greetings:
             reply = (
-                "أهلًا! أنا مساعد EstateIQ. نموذج EstateIQ هو اللي بيحسب سعر "
-                "العقار، وGemini بيساعد في شرح النتيجة. ابدأ بمساحة العقار "
-                "والمحافظة، مثلًا: شقة 150 متر في القاهرة."
+                "أهلًا بيك! تحب أساعدك في إيه النهارده؟"
             )
         else:
             reply = (
-                "Hi! I’m the EstateIQ Assistant. EstateIQ’s model calculates "
-                "the property value and Gemini helps explain the result. Start "
-                "with the area and governorate, for example: a 150 sqm apartment in Cairo."
+                "Hi! How can I help you today?"
             )
         return {"reply": reply, "stage": "greeting", "prediction": None}
 
@@ -767,6 +771,13 @@ def process_message_with_context(message, state):
     contextual_data = extract_contextual_answer(message, state)
     extracted_data.update(contextual_data)
 
+    if not extracted_data:
+        return {
+            "reply": "ممكن توضحلي قصدك شوية؟" if re.search(r"[\u0600-\u06ff]", message) else "Could you tell me a little more about what you need?",
+            "stage": "conversation",
+            "prediction": None,
+        }
+
     if not extracted_data and not get_missing_fields(state):
         return {
             "reply": (
@@ -781,6 +792,10 @@ def process_message_with_context(message, state):
 
     next_question = get_next_question(state)
     if next_question:
+        if re.search(r"[\u0600-\u06ff]", message):
+            missing = get_missing_fields(state)
+            if missing:
+                next_question = arabic_questions.get(missing[0], next_question)
         return {
             "reply": next_question,
             "stage": "collecting_details",

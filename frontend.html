@@ -79,6 +79,25 @@ h1{max-width:760px;font-size:clamp(48px,5.3vw,76px);line-height:1.01;letter-spac
 @media(max-width:1000px){.market-story{width:min(100% - 32px,1380px)}}
 @media(max-width:700px){.market-story{grid-template-columns:1fr}.story-card{min-height:250px}}
 @media(max-width:620px){.nav,.hero,.section,.footer{width:calc(100% - 28px)}.nav{height:70px}.brand small{display:none}.navlinks button{padding:8px 10px}.hero{padding:34px 0 30px;gap:30px}.heroimg{height:330px;border-radius:24px}h1{font-size:43px}.hero p{font-size:16px}.hero-proof{grid-template-columns:1fr 1fr}.hero-proof .proof-item:last-child{grid-column:1/-1}.panel,.result{border-radius:20px}}
+/* Scroll reveals and accessible interaction feedback */
+.chat-launcher{background:linear-gradient(145deg,#163b62,#091d34);color:#fff;box-shadow:0 14px 34px rgba(9,29,52,.28);transition:transform .25s ease,box-shadow .25s ease}
+.chat-launcher:hover,.chat-launcher:focus-visible{transform:translateY(-4px);box-shadow:0 20px 40px rgba(9,29,52,.35)}
+.chat-launcher::before{content:"Ask EstateIQ";position:absolute;right:calc(100% + 12px);padding:10px 15px;border-radius:12px;background:#102d4a;color:#fff;font:600 13px Manrope,system-ui,sans-serif;white-space:nowrap;opacity:0;transform:translateX(7px);pointer-events:none;transition:opacity .2s ease,transform .2s ease}
+.chat-launcher:hover::before,.chat-launcher:focus-visible::before{opacity:1;transform:translateX(0)}
+.chat-icon-btn{position:relative;transition:background .2s ease,transform .2s ease}
+.chat-icon-btn:hover{transform:translateY(-2px);background:#e4ecf4}
+.chat-icon-btn[data-tip]::after{content:attr(data-tip);position:absolute;top:calc(100% + 8px);right:0;z-index:5;background:#102d4a;color:white;padding:7px 10px;border-radius:8px;font:500 11px Manrope,sans-serif;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .2s ease}
+.chat-icon-btn:hover::after,.chat-icon-btn:focus-visible::after{opacity:1}
+.choice,.check,.kpi,.chartwrap,.insight .box{transition:transform .25s ease,box-shadow .25s ease,border-color .25s ease}
+.choice:not(:disabled):hover,.check:has(input:not(:disabled)):hover{transform:translateY(-2px);border-color:#8ca5bf;box-shadow:0 5px 14px rgba(16,45,74,.08)}
+.kpi:hover,.insight .box:hover{transform:translateY(-4px);box-shadow:0 12px 28px rgba(16,45,74,.1)}
+button:focus-visible{outline:3px solid #7598bb;outline-offset:4px}
+.reveal{opacity:1;transform:none}
+.motion-ready .reveal{opacity:0;transform:translateY(28px);transition:opacity .7s ease,transform .7s cubic-bezier(.2,.7,.2,1);transition-delay:var(--reveal-delay,0ms)}
+.motion-ready .reveal.in-view{opacity:1;transform:none}
+.chat-panel.open{animation:chatEnter .25s ease both}
+@keyframes chatEnter{from{opacity:0;transform:translateY(12px) scale(.98)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.motion-ready .reveal{opacity:1;transform:none}*,*::before,*::after{animation:none!important;transition:none!important}}
 </style>
 </head>
 <body>
@@ -128,7 +147,7 @@ h1{max-width:760px;font-size:clamp(48px,5.3vw,76px);line-height:1.01;letter-spac
         <p class="muted" id="resultText">Your prediction will appear here.</p>
         <div class="range-card"><div class="tiny muted">INDICATIVE VALUATION RANGE</div><b class="range-value" id="range">—</b><div class="tiny muted" id="rangeNote">A practical range will appear after valuation. It is not a guaranteed statistical interval.</div></div>
         <div class="grid2" style="margin-top:18px"><div><div class="tiny muted">VALUATION CONFIDENCE</div><b id="confidence">—</b></div><div><div class="tiny muted">MATCHING MARKET EVIDENCE</div><b id="evidence">—</b></div></div>
-        <div style="margin-top:18px"><div class="tiny muted">HIERARCHICAL MARKET CONTEXT</div><b id="baseline">—</b></div>
+        <div style="margin-top:18px"><div class="tiny muted">COMPARABLE MARKET PRICE</div><b id="baseline">—</b></div>
         <div class="contrib-grid" id="explanation" hidden><div class="contrib-card"><h4 class="up">Factors lifting the estimate</h4><ul class="contrib-list" id="positiveFactors"></ul></div><div class="contrib-card"><h4 class="down">Factors lowering the estimate</h4><ul class="contrib-list" id="negativeFactors"></ul></div></div>
         <div class="tiny muted" id="explanationNote" style="margin-top:10px" hidden>Native XGBoost contribution values explain this prediction relative to the model baseline. Percent effects are approximate.</div>
         <div class="tiny muted" style="margin-top:16px">This estimate is based on available market data and is intended as a decision-support tool.</div>
@@ -137,14 +156,7 @@ h1{max-width:760px;font-size:clamp(48px,5.3vw,76px);line-height:1.01;letter-spac
   </section>
 
   <section id="analytics" class="section">
-    <div class="section-head"><div><h2>Interactive Market Dashboard</h2><p>All analytics below are calculated from the cleaned dataset used by the training pipeline. Use the filters and hover over the charts to inspect values. Plotly controls also allow zoom, pan and image export.</p></div><span class="eyebrow">TRAINING DATASET · 18,620 CLEAN LISTINGS</span></div>
-    <div class="kpis">
-      <div class="kpi"><div class="k">Intelligence Engine</div><div class="v" id="mVersion">Active</div></div>
-      <div class="kpi"><div class="k">Validation R²</div><div class="v" id="mR2">—</div></div>
-      <div class="kpi"><div class="k">Median Absolute Error</div><div class="v" id="mMedAE">—</div></div>
-      <div class="kpi"><div class="k">Signal Features</div><div class="v" id="mFeatures">—</div></div>
-    </div>
-    <div class="panel" style="margin-bottom:20px"><div class="tiny muted">ANONYMOUS LIVE USAGE · THIS SERVER INSTANCE</div><div class="kpis" style="margin-bottom:8px"><div class="kpi"><div class="k">Predictions</div><div class="v" id="uCount">0</div></div><div class="kpi"><div class="k">Average Estimate</div><div class="v" id="uAverage">—</div></div><div class="kpi"><div class="k">Top Governorate</div><div class="v" id="uCity">—</div></div><div class="kpi"><div class="k">Top Property Type</div><div class="v" id="uType">—</div></div></div><div class="tiny muted" id="usageNote">No personal data is stored. Counters reset when the server instance restarts.</div></div>
+    <div class="section-head"><div><h2>Explore property prices</h2><p>Compare asking prices by location, property type and size. Refine your search to see the market that matters to you.</p></div></div>
     <div class="panel">
       <div class="filters">
         <div class="field"><label>Governorate</label><select id="fCity"><option value="All">All Governorates</option></select></div>
@@ -175,7 +187,7 @@ h1{max-width:760px;font-size:clamp(48px,5.3vw,76px);line-height:1.01;letter-spac
     </div>
   </section>
 
-  <div class="footer"><span>EstateIQ · Property Intelligence Platform</span><span>Dataset analytics are descriptive. Valuation includes evidence support and uncertainty, not financial advice.</span></div>
+  <div class="footer"><span>EstateIQ · Property Intelligence Platform</span><span>Prices reflect available listing information. Estimates are a guide, not a confirmed sale price.</span></div>
 </div>
 
 <!-- EstateIQ Chat Assistant -->
@@ -193,10 +205,10 @@ h1{max-width:760px;font-size:clamp(48px,5.3vw,76px);line-height:1.01;letter-spac
   </div>
   <div class="chat-status" id="chatStatus"><span class="chat-status-dot"></span><span id="chatStatusText">Assistant is ready</span></div>
   <div class="chat-messages" id="chatMessages">
-    <div class="chat-msg bot">Hello! Tell me about the property you want to value. You can start with: “150 sqm apartment in Cairo”.</div>
+    <div class="chat-msg bot">أهلًا بيك في EstateIQ! تحب أساعدك في إيه النهارده؟</div>
   </div>
   <form class="chat-compose" id="chatForm">
-    <input id="chatInput" autocomplete="off" placeholder="Describe the property..." />
+    <input id="chatInput" autocomplete="off" placeholder="اكتب رسالتك هنا..." />
     <button class="chat-send" id="chatSend" type="submit">Send</button>
   </form>
 </div>
@@ -218,7 +230,7 @@ function plot(id,traces,layout={}){const base={paper_bgcolor:'rgba(0,0,0,0)',plo
 function activate(id){qsa('.section').forEach(x=>x.classList.toggle('active',x.id===id));qsa('.navbtn').forEach(x=>x.classList.toggle('active',x.dataset.target===id));if(id==='analytics'){setTimeout(()=>{updateDashboard();loadUsageAnalytics()},80)}window.scrollTo({top:70,behavior:'smooth'})}
 qsa('.navbtn').forEach(b=>b.addEventListener('click',()=>activate(b.dataset.target)));qs('#goVal').onclick=()=>activate('valuation');qs('#goDash').onclick=()=>activate('analytics');
 let metadata=null;
-async function initAPI(){try{metadata=await (await fetch(API+'/metadata')).json();fill(qs('#ptype'),metadata.property_types);fill(qs('#city'),metadata.cities);fill(qs('#payment'),metadata.payment_methods);if(metadata.model_metrics){qs('#mR2').textContent=(metadata.model_metrics.r2??0).toFixed(3);qs('#mMedAE').textContent=money(metadata.model_metrics.median_ae_egp||0);qs('#mFeatures').textContent=(metadata.model_metrics.n_features||0).toLocaleString();}qs('#mVersion').textContent='Active';buildChoices('finishChoices',metadata.finishing_statuses,'finish');buildChoices('viewChoices',metadata.view_types,'view');FEATURES.forEach(([k,l])=>qs('#featureChecks').insertAdjacentHTML('beforeend',`<label class="check"><input type="checkbox" data-key="${k}"> ${l}</label>`));qs('#ptype').value=metadata.property_types.includes('Apartment')?'Apartment':metadata.property_types[0];qs('#city').value=metadata.cities.includes('Cairo')?'Cairo':metadata.cities[0];await refreshConstraint()}catch(e){qs('#err').textContent='API is not reachable. Start it with: python -m uvicorn main:app --reload --port 8000';qs('#err').classList.add('show')}}
+async function initAPI(){try{metadata=await (await fetch(API+'/metadata')).json();fill(qs('#ptype'),metadata.property_types);fill(qs('#city'),metadata.cities);fill(qs('#payment'),metadata.payment_methods);buildChoices('finishChoices',metadata.finishing_statuses,'finish');buildChoices('viewChoices',metadata.view_types,'view');FEATURES.forEach(([k,l])=>qs('#featureChecks').insertAdjacentHTML('beforeend',`<label class="check"><input type="checkbox" data-key="${k}"> ${l}</label>`));qs('#ptype').value=metadata.property_types.includes('Apartment')?'Apartment':metadata.property_types[0];qs('#city').value=metadata.cities.includes('Cairo')?'Cairo':metadata.cities[0];await refreshConstraint()}catch(e){qs('#err').textContent='Property details are temporarily unavailable. Please try again shortly.';qs('#err').classList.add('show')}}
 function fill(el,vals){el.innerHTML=vals.map(v=>`<option value="${v}">${v}</option>`).join('')}
 function buildChoices(id,vals,kind){const el=qs('#'+id);el.innerHTML='';vals.forEach(v=>{const b=document.createElement('button');b.type='button';b.className='choice'+((kind==='finish'&&v==='unspecified')||(kind==='view'&&v==='none')?' active':'');b.textContent=v.replaceAll('_',' ').replace(/\b\w/g,c=>c.toUpperCase());b.dataset.value=v;b.addEventListener('click',async()=>{if(b.disabled)return;el.querySelectorAll('.choice').forEach(x=>x.classList.remove('active'));b.classList.add('active');if(kind==='finish')finish=v;else view=v;await refreshConstraint()});el.appendChild(b)})}
 function applyOptionStates(options,select){const current=select.value;[...select.options].forEach(o=>{const item=options.find(x=>x.value===o.value);o.disabled=!!item&&item.status!=='available';o.title=item?.reason||''});if(select.selectedOptions[0]?.disabled){const next=[...select.options].find(o=>!o.disabled);if(next)select.value=next.value}return current!==select.value}
@@ -227,7 +239,7 @@ async function refreshConstraint(){try{const params=new URLSearchParams({city:qs
 qs('#ptype').addEventListener('change',refreshConstraint);qs('#city').addEventListener('change',async()=>{qs('#compound').value='';await refreshConstraint()});qs('#area').addEventListener('change',refreshConstraint);qs('#area').addEventListener('input',()=>{clearTimeout(window._ct);window._ct=setTimeout(refreshConstraint,250)});
 let cto;qs('#compound').addEventListener('input',e=>{clearTimeout(cto);cto=setTimeout(async()=>{try{const city=encodeURIComponent(qs('#city').value);const d=await (await fetch(`${API}/compounds?q=${encodeURIComponent(e.target.value)}&limit=12&city=${city}`)).json();qs('#compoundList').innerHTML=d.matches.map(x=>`<option value="${x}">`).join('');await refreshConstraint()}catch{}},220)});
 function renderContributors(d){const positive=d.top_positive_contributors||[],negative=d.top_negative_contributors||[],available=d.explanation_method!=='unavailable'&&(positive.length||negative.length);qs('#explanation').hidden=!available;qs('#explanationNote').hidden=!available;const render=(id,items,cls)=>{qs(id).innerHTML=items.length?items.map(x=>`<li class="contrib-item"><span>${x.label}</span><b class="${cls}">${x.approx_effect_percent>0?'+':''}${x.approx_effect_percent.toFixed(1)}%</b></li>`).join(''):'<li class="tiny muted">No material factors</li>'};render('#positiveFactors',positive,'up');render('#negativeFactors',negative,'down')}
-async function loadUsageAnalytics(){try{const d=await (await fetch(API+'/analytics')).json();qs('#uCount').textContent=d.prediction_count.toLocaleString();qs('#uAverage').textContent=d.prediction_count?money(d.average_predicted_price_egp):'—';qs('#uCity').textContent=d.most_requested_governorate||'—';qs('#uType').textContent=d.most_requested_property_type||'—';qs('#usageNote').textContent='Anonymous in-memory counters. '+d.reset_note}catch(e){qs('#usageNote').textContent='Live usage counters are temporarily unavailable.'}}
+function loadUsageAnalytics(){}
 qs('#predictBtn').onclick=async()=>{qs('#err').classList.remove('show');const p={area_sqm:+qs('#area').value,bedrooms:+qs('#beds').value,bathrooms:+qs('#baths').value,property_type:qs('#ptype').value,city:qs('#city').value,payment_method:qs('#payment').value,compound_name:qs('#compound').value.trim()||null,finishing_status:finish,view_type:view};qsa('#featureChecks input').forEach(c=>p[c.dataset.key]=c.checked);try{const r=await fetch(API+'/predict',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});const d=await r.json();if(!r.ok)throw new Error(Array.isArray(d.detail)?d.detail.map(x=>x.msg).join(' · '):d.detail||'Prediction failed');qs('#predPrice').textContent=d.predicted_price_formatted;qs('#baseline').textContent=money(d.market_context_egp);qs('#range').textContent=money(d.estimate_low_egp)+' – '+money(d.estimate_high_egp);qs('#rangeNote').textContent=d.range_note;qs('#confidence').textContent=d.confidence_label+' · '+Math.round(d.confidence_score*100)+'%';qs('#evidence').textContent=d.evidence_support.toLocaleString()+' comparable records';qs('#resultText').textContent=`${p.property_type} · ${p.area_sqm} sqm · ${p.city} · ${p.bedrooms} bed · ${p.bathrooms} bath`;renderContributors(d);loadUsageAnalytics()}catch(e){qs('#err').textContent=e.message;qs('#err').classList.add('show')}};
 function initFilters(){const cities=[...new Set(DATA.map(r=>r[COL.city]))].sort(),types=[...new Set(DATA.map(r=>r[COL.type]))].sort(),pays=[...new Set(DATA.map(r=>r[COL.pay]))].sort();cities.forEach(v=>qs('#fCity').insertAdjacentHTML('beforeend',`<option>${v}</option>`));types.forEach(v=>qs('#fType').insertAdjacentHTML('beforeend',`<option>${v}</option>`));pays.forEach(v=>qs('#fPay').insertAdjacentHTML('beforeend',`<option>${v}</option>`));['fCity','fType','fPay','fPrice'].forEach(id=>qs('#'+id).addEventListener('change',updateDashboard))}
 function filtered(){const c=qs('#fCity').value,t=qs('#fType').value,p=qs('#fPay').value,pr=qs('#fPrice').value;return DATA.filter(r=>{if(c!=='All'&&r[COL.city]!==c)return false;if(t!=='All'&&r[COL.type]!==t)return false;if(p!=='All'&&r[COL.pay]!==p)return false;if(pr!=='all'){const [lo,hi]=pr.split('-').map(Number);const m=r[COL.price]/1e6;if(!(m>=lo&&m<hi))return false}return true})}
@@ -283,6 +295,7 @@ function createChatSessionId(){
 let chatSessionId=localStorage.getItem('estateiq_chat_session');
 if(!chatSessionId){chatSessionId=createChatSessionId();localStorage.setItem('estateiq_chat_session',chatSessionId);}
 let chatState=null;
+let chatHistory=[];
 
 function addChatMessage(text,role='bot'){
   const el=document.createElement('div');
@@ -302,6 +315,7 @@ chatReset.addEventListener('click',async()=>{
   chatSessionId=createChatSessionId();
   localStorage.setItem('estateiq_chat_session',chatSessionId);
   chatState=null;
+  chatHistory=[];
   chatMessages.innerHTML='';
   addChatMessage('New property started. What is the property area in square meters?','bot');
   chatInput.focus();
@@ -320,7 +334,7 @@ chatForm.addEventListener('submit',async(event)=>{
     const response=await fetch(`${API}/chat`,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({message,session_id:chatSessionId,state:chatState})
+      body:JSON.stringify({message,session_id:chatSessionId,state:chatState,history:chatHistory})
     });
     const data=await response.json();
     typing.remove();
@@ -329,22 +343,38 @@ chatForm.addEventListener('submit',async(event)=>{
       return;
     }
     chatState=data.state||chatState;
+    chatHistory=[...chatHistory,{role:'user',text:message},{role:'assistant',text:data.reply||''}].slice(-12);
     if(data.assistant_provider==='gemini')setChatProviderStatus('gemini');
     if(data.assistant_provider==='local_fallback')setChatProviderStatus('fallback');
     addChatMessage(data.reply||'No response received.','bot');
   }catch(error){
     typing.remove();
-    addChatMessage('Unable to connect to EstateIQ. Make sure the FastAPI server is running on port 8000.','bot');
+    addChatMessage('We couldn’t connect just now. Please try again in a moment.','bot');
   }finally{
     setChatBusy(false);
     chatInput.focus();
   }
 });
 
-const revealObserver=new IntersectionObserver(entries=>{
-  entries.forEach(entry=>{if(entry.isIntersecting){entry.target.classList.add('in-view');revealObserver.unobserve(entry.target)}});
-},{threshold:.12});
-document.querySelectorAll('.reveal').forEach(el=>revealObserver.observe(el));
+document.querySelectorAll('.market-story').forEach(el=>el.classList.remove('reveal'));
+const revealTargets=document.querySelectorAll('.story-card,.section-head,#valuation > .grid2 > .panel,#resultBox,#analytics .kpi,#analytics .chartwrap,#analytics .insight .box,.footer');
+if('IntersectionObserver' in window && !window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+  const revealObserver=new IntersectionObserver(entries=>{
+    entries.forEach(entry=>{
+      if(entry.isIntersecting){entry.target.classList.add('in-view');revealObserver.unobserve(entry.target)}
+    });
+  },{threshold:0,rootMargin:'0px 0px -35px 0px'});
+  revealTargets.forEach(el=>{
+    el.classList.add('reveal');
+    if(el.matches('.kpi,.story-card'))el.style.setProperty('--reveal-delay',((Array.from(el.parentElement.children).indexOf(el)%4)*80)+'ms');
+    revealObserver.observe(el);
+  });
+  document.documentElement.classList.add('motion-ready');
+}
+chatReset.dataset.tip='Start a new conversation';
+chatReset.setAttribute('aria-label','Start a new conversation');
+chatClose.dataset.tip='Close chat';
+chatClose.setAttribute('aria-label','Close chat');
 
 
 </script>

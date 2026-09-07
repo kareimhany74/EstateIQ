@@ -14,6 +14,7 @@ import pandas as pd
 import xgboost as xgb
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from chatbot import process_message_with_context, create_empty_state, configure_runtime
@@ -90,6 +91,8 @@ app = FastAPI(
     version=MODEL_VERSION,
     lifespan=app_lifespan,
 )
+app.mount("/assets", StaticFiles(directory=Path(__file__).with_name("assets")), name="assets")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -450,6 +453,7 @@ def build_constraints(
 
 # Step 5: Define request and response schemas.
 class ChatRequest(BaseModel):
+    history: list[dict[str, str]] = Field(default_factory=list, max_length=12)
     message: str = Field(..., min_length=1, max_length=4000)
     session_id: str = Field(default="default", min_length=1, max_length=100)
     state: Optional[dict] = None
@@ -920,11 +924,12 @@ async def chat(request: ChatRequest):
 
     chat_result = process_message_with_context(request.message, state)
     if chat_result["stage"] != "valuation":
-        assistant_result = {
-            "text": chat_result["reply"],
-            "provider": "estateiq_fast_path",
-            "reason": None,
-        }
+        assistant_result = await gemini_chat.converse(
+            user_message=request.message, state=state,
+            workflow_reply=chat_result["reply"], stage=chat_result["stage"],
+            history=[{"role": item["role"], "text": item.get("text", "")[:2000]}
+                     for item in request.history if item.get("role") in {"user", "assistant"}],
+        )
     else:
         assistant_result = await gemini_chat.enhance(
             user_message=request.message,
